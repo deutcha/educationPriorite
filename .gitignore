@@ -32,8 +32,6 @@ build/
 ### VS Code ###
 .vscode/
 
-### SECRETS & PROD ###
-application-prod.properties
 *.env
 .env
 
