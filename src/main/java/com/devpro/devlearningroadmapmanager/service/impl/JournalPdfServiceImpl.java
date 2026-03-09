@@ -1,5 +1,6 @@
 package com.devpro.devlearningroadmapmanager.service.impl;
 
+import com.devpro.devlearningroadmapmanager.cloud.service.CloudinaryService;
 import com.devpro.devlearningroadmapmanager.config.FileStorageProperty;
 import com.devpro.devlearningroadmapmanager.dtos.JournalPdfDto;
 import com.devpro.devlearningroadmapmanager.entities.JournalPDF;
@@ -11,6 +12,8 @@ import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,25 +40,44 @@ public class JournalPdfServiceImpl implements IJournalPdfService {
     private final JournalPdfRepository journalRepository;
     private final JournalPdfMapper journalMapper;
     private final FileStorageProperty fileStorageProperty;
+    private final CloudinaryService cloudinaryService;
 
     @Override
-    public List<JournalPdfDto> findJournals(Long id, String statut) {
+    public Page<JournalPdfDto> findJournals(Long id, String statut, String search, Instant dateDebut, Instant dateFin, Pageable pageable) {
         Specification<JournalPDF> specification = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
             if (id != null) {
                 predicates.add(cb.equal(root.get("id"), id));
             }
+
             if (StringUtils.hasText(statut)) {
                 predicates.add(cb.equal(root.get("statut"), statut));
+            }
+
+            // Recherche sur titre et slug
+            if (StringUtils.hasText(search)) {
+                String pattern = "%" + search.toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("titre")), pattern),
+                        cb.like(cb.lower(root.get("slug")), pattern)
+                ));
+            }
+
+            // Filtre dateDebut
+            if (dateDebut != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("dateAjout"), dateDebut));
+            }
+
+            // Filtre dateFin
+            if (dateFin != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("dateAjout"), dateFin));
             }
 
             return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
         };
 
-        return journalRepository.findAll(specification).stream()
-                .map(journalMapper::toDto)
-                .toList();
+        return journalRepository.findAll(specification, pageable).map(journalMapper::toDto);
     }
 
     @Override
@@ -71,18 +93,20 @@ public class JournalPdfServiceImpl implements IJournalPdfService {
             journalMapper.partialUpdate(dto, journal);
         }
 
-        try {
-            if (pdfFile != null && !pdfFile.isEmpty()) {
-                String pdfName = storeFile(pdfFile, "PDF_");
-                journal.setFichierPdf(pdfName);
+        if (pdfFile != null && !pdfFile.isEmpty()) {
+            if (id != null && journal.getFichierPdf() != null) {
+                cloudinaryService.deletePdf(journal.getFichierPdf());
             }
+            String pdfUrl = cloudinaryService.uploadPdf(pdfFile);
+            journal.setFichierPdf(pdfUrl);
+        }
 
-            if (coverFile != null && !coverFile.isEmpty()) {
-                String coverName = storeFile(coverFile, "COVER_");
-                journal.setImageCouverture(coverName);
+        if (coverFile != null && !coverFile.isEmpty()) {
+            if (id != null && journal.getImageCouverture() != null) {
+                cloudinaryService.deleteImage(journal.getImageCouverture());
             }
-        } catch (IOException e) {
-            throw new RuntimeException("Erreur lors du stockage des fichiers", e);
+            String coverUrl = cloudinaryService.uploadCover(coverFile);
+            journal.setImageCouverture(coverUrl);
         }
 
         journal.setSlug(generateSlug(dto.titre()));
@@ -97,8 +121,8 @@ public class JournalPdfServiceImpl implements IJournalPdfService {
         JournalPDF journal = journalRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Journal non trouvé"));
 
-        deletePhysicalFile(journal.getFichierPdf());
-        deletePhysicalFile(journal.getImageCouverture());
+        cloudinaryService.deletePdf(journal.getFichierPdf());
+        cloudinaryService.deleteImage(journal.getImageCouverture());
 
         journalRepository.delete(journal);
     }
@@ -130,25 +154,6 @@ public class JournalPdfServiceImpl implements IJournalPdfService {
     }
 
     // --- Méthodes privées utilitaires ---
-
-    private String storeFile(MultipartFile file, String prefix) throws IOException {
-        Path root = Paths.get(fileStorageProperty.getUploadDir()).toAbsolutePath().normalize();
-        if (!Files.exists(root)) Files.createDirectories(root);
-
-        String fileName = prefix + UUID.randomUUID() + "_" + StringUtils.cleanPath(Objects.requireNonNull(file.getOriginalFilename()));
-        Path target = root.resolve(fileName);
-        Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
-        return fileName;
-    }
-
-    private void deletePhysicalFile(String fileName) {
-        if (fileName != null) {
-            try {
-                Path path = Paths.get(fileStorageProperty.getUploadDir()).resolve(fileName);
-                Files.deleteIfExists(path);
-            } catch (IOException ignored) {}
-        }
-    }
 
     private String generateSlug(String title) {
         return title.toLowerCase()

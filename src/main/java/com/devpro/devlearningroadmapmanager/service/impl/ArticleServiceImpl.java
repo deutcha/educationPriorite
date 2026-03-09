@@ -1,5 +1,6 @@
 package com.devpro.devlearningroadmapmanager.service.impl;
 
+import com.devpro.devlearningroadmapmanager.cloud.service.CloudinaryService;
 import com.devpro.devlearningroadmapmanager.config.FileStorageProperty;
 import com.devpro.devlearningroadmapmanager.dtos.ArticleDto;
 import com.devpro.devlearningroadmapmanager.entities.Article;
@@ -13,6 +14,8 @@ import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,9 +43,10 @@ public class ArticleServiceImpl implements IArticleService {
     private final RubriqueRepository rubriqueRepository;
     private final ArticleMapper articleMapper;
     private final FileStorageProperty fileStorageProperty;
+    private final CloudinaryService cloudinaryService;
 
     @Override
-    public List<ArticleDto> findArticles(Long id, Long rubriqueId, String slug, String statut) {
+    public Page<ArticleDto> findArticles(Long id, Long rubriqueId, String search, String statut, Instant dateDebut, Instant dateFin, Pageable pageable) {
         Specification<Article> specification = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
@@ -52,19 +56,36 @@ public class ArticleServiceImpl implements IArticleService {
             if (rubriqueId != null) {
                 predicates.add(cb.equal(root.get("rubrique").get("id"), rubriqueId));
             }
-            if (StringUtils.hasText(slug)) {
-                predicates.add(cb.equal(root.get("slug"), slug));
+            if (StringUtils.hasText(search)) {
+                String searchTerm = "%" + search.toLowerCase() + "%";
+                Predicate predicate = cb.or(
+                        cb.like(cb.lower(root.get("titre")), searchTerm),
+                        cb.like(cb.lower(root.get("slug")), searchTerm)
+                );
+                predicates.add(predicate);
             }
+
+            // datePublication >= dateDebut
+            if (dateDebut != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("datePublication"), dateDebut));
+            }
+
+            // datePublication <= dateFin
+            if (dateFin != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("datePublication"), dateFin));
+            }
+
             if (StringUtils.hasText(statut)) {
                 predicates.add(cb.equal(root.get("statut"), statut));
             }
 
+
+
             return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
         };
 
-        return articleRepository.findAll(specification).stream()
-                .map(articleMapper::toDto)
-                .toList();
+        return articleRepository.findAll(specification, pageable)
+                .map(articleMapper::toDto);
     }
 
     @Override
@@ -86,12 +107,8 @@ public class ArticleServiceImpl implements IArticleService {
         article.setRubrique(rubrique);
 
         if (imageFile != null && !imageFile.isEmpty()) {
-            try {
-                String fileName = storeFile(imageFile);
-                article.setImage(fileName);
-            } catch (IOException e) {
-                throw new RuntimeException("Erreur lors du stockage de l'image", e);
-            }
+            String imageUrl = cloudinaryService.uploadImage(imageFile);
+            article.setImage(imageUrl);
         }
         article.setSlug(generateSlug(dto.titre()));
         article.setDatePublication(Instant.now());
@@ -106,10 +123,7 @@ public class ArticleServiceImpl implements IArticleService {
                 .orElseThrow(() -> new EntityNotFoundException("Article non trouvé"));
 
         if (article.getImage() != null) {
-            try {
-                Path path = Paths.get(fileStorageProperty.getUploadDir()).resolve(article.getImage());
-                Files.deleteIfExists(path);
-            } catch (IOException ignored) {}
+            cloudinaryService.deleteImage(article.getImage());
         }
 
         articleRepository.delete(article);
@@ -142,16 +156,6 @@ public class ArticleServiceImpl implements IArticleService {
     }
 
     // --- Utilitaires ---
-
-    private String storeFile(MultipartFile file) throws IOException {
-        Path root = Paths.get(fileStorageProperty.getUploadDir()).toAbsolutePath().normalize();
-        if (!Files.exists(root)) Files.createDirectories(root);
-
-        String fileName = UUID.randomUUID() + "_" + StringUtils.cleanPath(Objects.requireNonNull(file.getOriginalFilename()));
-        Path target = root.resolve(fileName);
-        Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
-        return fileName;
-    }
 
     private String generateSlug(String title) {
         return title.toLowerCase()

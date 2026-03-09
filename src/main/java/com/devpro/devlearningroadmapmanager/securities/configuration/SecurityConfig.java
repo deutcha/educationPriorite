@@ -41,6 +41,7 @@ public class SecurityConfig {
                 // sont autorisé (c'est-à-dire qu'on n'a pas besoin identification ou d'autre securite pour acceder a ces routes.)
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/journal-manager/download-pdf").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // le anyRequest().authenticated() permet de dire que pour toute autre requête, il faut être authentifié
                         .anyRequest().authenticated()

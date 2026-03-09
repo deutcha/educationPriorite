@@ -16,6 +16,10 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.core.io.Resource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -25,8 +29,10 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 
 @RestController
@@ -45,13 +51,18 @@ public class JournalController {
 
     @Operation(summary = "Lister les articles", description = "Recherche multi-critères des articles")
     @GetMapping("/articles")
-    public ResponseEntity<List<ArticleDto>> getAllArticles(
+    public ResponseEntity<Page<ArticleDto>> getAllArticles(
             @RequestParam(required = false) Long id,
             @RequestParam(required = false) Long rubriqueId,
-            @RequestParam(required = false) String slug,
-            @RequestParam(required = false) String statut
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String statut,
+            @RequestParam(required = false) Instant dateDebut,
+            @RequestParam(required = false) Instant dateFin,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
     ) {
-        return ResponseEntity.ok(articleService.findArticles(id, rubriqueId, slug, statut));
+        Pageable pageable = PageRequest.of(page, size, Sort.by("datePublication").descending());
+        return ResponseEntity.ok(articleService.findArticles(id, rubriqueId, search, statut, dateDebut, dateFin, pageable));
     }
 
     @GetMapping("/articles/{slug}")
@@ -81,34 +92,23 @@ public class JournalController {
         articleService.deleteArticle(id);
         return ResponseEntity.noContent().build();
     }
-
-    @GetMapping("/articles/download/{fileName}")
-    public ResponseEntity<Resource> downloadIamgeArticle(@PathVariable String fileName) throws IOException {
-        Resource resource = articleService.downloadDocument(fileName);
-
-        Path path = resource.getFile().toPath();
-        String contentType = Files.probeContentType(path);
-
-        if (contentType == null) {
-            contentType = "application/octet-stream";
-        }
-
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(contentType))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + resource.getFilename() + "\"")
-                .body(resource);
-    }
     // </editor-fold>
 
     // <editor-fold defaultstate="collapsed" desc="JOURNAUX PDF">
 
-    @Operation(summary = "Lister les journaux", description = "Recherche par ID ou Statut")
+    @Operation(summary = "Lister les journaux", description = "Recherche par ID, Statut, texte ou période")
     @GetMapping("/journal")
-    public ResponseEntity<List<JournalPdfDto>> findJournals(
+    public ResponseEntity<Page<JournalPdfDto>> findJournals(
             @RequestParam(required = false) Long id,
-            @RequestParam(required = false) String statut
+            @RequestParam(required = false) String statut,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Instant dateDebut,
+            @RequestParam(required = false) Instant dateFin,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "9") int size
     ) {
-        return ResponseEntity.ok(journalService.findJournals(id, statut));
+        Pageable pageable = PageRequest.of(page, size, Sort.by("dateAjout").descending());
+        return ResponseEntity.ok(journalService.findJournals(id, statut, search, dateDebut, dateFin, pageable));
     }
 
     @Operation(summary = "Récupérer un journal par son slug")
@@ -140,19 +140,6 @@ public class JournalController {
         return ResponseEntity.ok(updated);
     }
 
-    @Operation(summary = "Télécharger un fichier (PDF ou couverture)")
-    @GetMapping("/journal/download/{fileName}")
-    public ResponseEntity<Resource> downloadFile(@PathVariable String fileName) throws IOException {
-        Resource resource = journalService.downloadDocument(fileName);
-
-        String contentType = fileName.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg";
-
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(contentType))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + resource.getFilename() + "\"")
-                .body(resource);
-    }
-
     @Operation(summary = "Supprimer un journal et ses fichiers")
     @DeleteMapping("/journal/{id}")
     public ResponseEntity<Void> deleteJournal(@PathVariable Long id) {
@@ -170,11 +157,14 @@ public class JournalController {
             @ApiResponse(responseCode = "500", description = "Erreur serveur")
     })
     @GetMapping("/rubrique")
-    public ResponseEntity<List<RubriqueDto>> getAllRubriques(
+    public ResponseEntity<Page<RubriqueDto>> getAllRubriques(
             @RequestParam(required = false) Long id,
-            @RequestParam(required = false) String slug
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
     ) {
-        return ResponseEntity.ok(rubriqueService.findAllRubriques(id, slug));
+        Pageable pageable = PageRequest.of(page, size);
+        return ResponseEntity.ok(rubriqueService.findAllRubriques(id, search, pageable));
     }
 
     @Operation(summary = "Créer une nouvelle rubrique")
@@ -222,4 +212,18 @@ public class JournalController {
     }
 
     // </editor-fold>
+
+    @GetMapping("/download-pdf")
+    public ResponseEntity<byte[]> downloadPdf(@RequestParam String fileUrl) throws IOException {
+        URL url = new URL(fileUrl);
+        byte[] pdfBytes = url.openStream().readAllBytes();
+
+        String fileName = fileUrl.substring(fileUrl.lastIndexOf("/") + 1);
+        if (!fileName.endsWith(".pdf")) fileName += ".pdf";
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                .header(HttpHeaders.CONTENT_TYPE, "application/pdf")
+                .body(pdfBytes);
+    }
 }
