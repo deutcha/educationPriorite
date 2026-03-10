@@ -5,10 +5,16 @@ import com.devpro.devlearningroadmapmanager.securities.service.IUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,10 +30,15 @@ public class UserController {
 
     @Operation(summary = "Lister les utilisateurs")
     @GetMapping("/users")
-    public ResponseEntity<List<UserDto>> getAllUsers(
-            @RequestParam(required = false) String email
+    public ResponseEntity<Page<UserDto>> getAllUsers(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateDebut,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateFin,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
     ) {
-        List<UserDto> result = userService.getAllUsers(email);
+        Pageable pageable = PageRequest.of(page, size, Sort.by("updatedAt").descending());
+        Page<UserDto> result = userService.getAllUsers(search, dateDebut, dateFin, pageable);
         return ResponseEntity.ok(result);
     }
 

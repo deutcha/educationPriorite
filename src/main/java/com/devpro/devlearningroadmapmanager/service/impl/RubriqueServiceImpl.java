@@ -37,7 +37,7 @@ public class RubriqueServiceImpl implements IRubriqueService {
             // StringUtils.hasText() : le code vérifie si la chaîne search n'est pas nulle, pas vide,
             // et ne contient pas que des espaces. Si c'est vide, on ignore simplement le filtrage.
             if (StringUtils.hasText(search)) {
-                String pattern = "%" + search + "%";
+                String pattern = "%" + search.toLowerCase() + "%";
                 // cb.or : c'est ici que la magie opère. Le Predicate combine trois conditions. L'article sera sélectionné si le mot-clé se trouve dans :
                 //Le Titre de l'article.
                 //Le Slug (l'URL simplifiée).

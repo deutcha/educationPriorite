@@ -10,6 +10,8 @@ import com.devpro.devlearningroadmapmanager.securities.service.IUserService;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.criteria.Predicate;
 import lombok.AllArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -17,7 +19,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.util.*;
 
 @Service
@@ -34,25 +38,37 @@ public class UserServiceImpl implements IUserService {
 
     @Transactional(readOnly = true)
     @Override
-    public List<UserDto> getAllUsers(String email) {
+    public Page<UserDto> getAllUsers(String search,
+                                     LocalDateTime dateDebut,
+                                     LocalDateTime dateFin,
+                                     Pageable pageable) {
         Specification<User> specification = ((root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
 
-            if (!(email == null || email.isEmpty())) {
-                predicates.add(criteriaBuilder.equal(
-                        root.get("email"),
-                        email
-                ));
+            if (StringUtils.hasText(search)) {
+                String pattern = "%" + search.toLowerCase() + "%";
+                Predicate predicate = criteriaBuilder.or(
+                        criteriaBuilder.like(criteriaBuilder.lower(root.get("email")), pattern),
+                        criteriaBuilder.like(criteriaBuilder.lower(root.get("username")), pattern)
+                );
+                predicates.add(predicate);
+            }
+
+            if (dateDebut != null) {
+                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("updatedAt").as(LocalDateTime.class), dateDebut));
+            }
+
+            if (dateFin != null) {
+                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("updatedAt").as(LocalDateTime.class), dateFin));
             }
 
             return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
         });
 
-        List<User> users = userRepository.findAll(specification);
+        Page<User> users = userRepository.findAll(specification, pageable);
 
-        return users.stream()
-                .map(userMapper::toDto)
-                .toList();
+        return users.map(userMapper::toDto);
+
     }
 
     @Transactional(readOnly = true)
