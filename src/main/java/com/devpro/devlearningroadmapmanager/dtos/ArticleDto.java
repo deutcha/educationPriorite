@@ -3,6 +3,7 @@ package com.devpro.devlearningroadmapmanager.dtos;
 import com.devpro.devlearningroadmapmanager.enumeration.StatutArticle;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.util.List;
 
 import java.time.Instant;
 
@@ -15,7 +16,8 @@ public record ArticleDto(
         Instant datePublication,
         StatutArticle statut,
         Long rubriqueId,
-        String rubriqueNom
+        String rubriqueNom,
+        List<ArticleSectionDto> sections
 ) {
     public record ArticleSaveDto(
             @NotBlank(message = "Le titre est obligatoire")

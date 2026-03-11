@@ -14,6 +14,7 @@ public interface ArticleMapper {
 
     @Mapping(target = "rubriqueId", source = "rubrique.id")
     @Mapping(target = "rubriqueNom", source = "rubrique.nom")
+    @Mapping(target = "sections", expression = "java(article.getSections().stream().map(s -> new ArticleSectionDto(s.getId(), s.getContenu(), s.getImage(), s.getOrdre())).toList())")
     ArticleDto toDto(Article article);
 
     List<ArticleDto> toDtoList(List<Article> articles);

@@ -1,13 +1,17 @@
 package com.devpro.devlearningroadmapmanager.controllers;
 
 import com.devpro.devlearningroadmapmanager.dtos.ArticleDto;
+import com.devpro.devlearningroadmapmanager.dtos.ArticleSectionDto;
 import com.devpro.devlearningroadmapmanager.dtos.JournalPdfDto;
 import com.devpro.devlearningroadmapmanager.dtos.RubriqueDto;
 import com.devpro.devlearningroadmapmanager.email.dto.MessageContact;
 import com.devpro.devlearningroadmapmanager.email.service.IEmailService;
+import com.devpro.devlearningroadmapmanager.service.IArticleSectionService;
 import com.devpro.devlearningroadmapmanager.service.IArticleService;
 import com.devpro.devlearningroadmapmanager.service.IJournalPdfService;
 import com.devpro.devlearningroadmapmanager.service.IRubriqueService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -15,7 +19,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
-import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -30,8 +33,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 
@@ -43,56 +44,110 @@ import java.util.List;
 public class JournalController {
 
     private final IArticleService articleService;
+    private final IArticleSectionService articleSectionService;
+    private final ObjectMapper objectMapper;
     private final IJournalPdfService journalService;
     private final IRubriqueService rubriqueService;
     private final IEmailService messageService;
 
-    // <editor-fold defaultstate="collapsed" desc="ARTICLES">
+        // <editor-fold defaultstate="collapsed" desc="ARTICLES">
 
-    @Operation(summary = "Lister les articles", description = "Recherche multi-critères des articles")
-    @GetMapping("/articles")
-    public ResponseEntity<Page<ArticleDto>> getAllArticles(
-            @RequestParam(required = false) Long id,
-            @RequestParam(required = false) Long rubriqueId,
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false) String statut,
-            @RequestParam(required = false) Instant dateDebut,
-            @RequestParam(required = false) Instant dateFin,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
-    ) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("datePublication").descending());
-        return ResponseEntity.ok(articleService.findArticles(id, rubriqueId, search, statut, dateDebut, dateFin, pageable));
-    }
+        @Operation(summary = "Lister les articles", description = "Recherche multi-critères des articles")
+        @GetMapping("/articles")
+        public ResponseEntity<Page<ArticleDto>> getAllArticles(
+                @RequestParam(required = false) Long id,
+                @RequestParam(required = false) Long rubriqueId,
+                @RequestParam(required = false) String search,
+                @RequestParam(required = false) String statut,
+                @RequestParam(required = false) Instant dateDebut,
+                @RequestParam(required = false) Instant dateFin,
+                @RequestParam(defaultValue = "0") int page,
+                @RequestParam(defaultValue = "10") int size
+        ) {
+            Pageable pageable = PageRequest.of(page, size, Sort.by("datePublication").descending());
+            return ResponseEntity.ok(articleService.findArticles(id, rubriqueId, search, statut, dateDebut, dateFin, pageable));
+        }
 
-    @GetMapping("/articles/{slug}")
-    public ResponseEntity<ArticleDto> getArticleBySlug(@PathVariable String slug) {
-        return ResponseEntity.ok(articleService.getArticleBySlug(slug));
-    }
+        @GetMapping("/articles/{slug}")
+        public ResponseEntity<ArticleDto> getArticleBySlug(@PathVariable String slug) {
+            return ResponseEntity.ok(articleService.getArticleBySlug(slug));
+        }
 
-    @PostMapping(value = "/articles", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ArticleDto> createArticle(
-            @Valid @ModelAttribute @ParameterObject ArticleDto.ArticleSaveDto article,
-            @RequestPart(required = false, name = "image") MultipartFile image
-    ) {
-        return new ResponseEntity<>(articleService.saveArticle(null, article, image), HttpStatus.CREATED);
-    }
+        @PostMapping(value = "/articles", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+        public ResponseEntity<ArticleDto> createArticle(
+                @Valid @ModelAttribute @ParameterObject ArticleDto.ArticleSaveDto article,
+                @RequestPart(required = false, name = "image") MultipartFile image,
+                @RequestPart(required = false, name = "sections") String sectionsJson,
+                @RequestPart(required = false, name = "sectionImages") List<MultipartFile> sectionImages
+        ) throws JsonProcessingException {
+            List<ArticleSectionDto> sections = parseSections(sectionsJson);
+            return new ResponseEntity<>(articleService.saveArticle(null, article, image, sections, sectionImages), HttpStatus.CREATED);
+        }
 
-    @PatchMapping(value = "/articles/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ArticleDto> updateArticle(
-            @PathVariable Long id,
-            @Valid @ModelAttribute @ParameterObject ArticleDto.ArticleSaveDto article,
-            @RequestPart(required = false, name = "image") MultipartFile image
-    ) {
-        return ResponseEntity.ok(articleService.saveArticle(id, article, image));
-    }
+        @PatchMapping(value = "/articles/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+        public ResponseEntity<ArticleDto> updateArticle(
+                @PathVariable Long id,
+                @Valid @ModelAttribute @ParameterObject ArticleDto.ArticleSaveDto article,
+                @RequestPart(required = false, name = "image") MultipartFile image,
+                @RequestPart(required = false, name = "sections") String sectionsJson,
+                @RequestPart(required = false, name = "sectionImages") List<MultipartFile> sectionImages
+        ) throws JsonProcessingException {
+            List<ArticleSectionDto> sections = parseSections(sectionsJson);
+            return ResponseEntity.ok(articleService.saveArticle(id, article, image, sections, sectionImages));
+        }
 
-    @DeleteMapping("/articles/{id}")
-    public ResponseEntity<Void> deleteArticle(@PathVariable Long id) {
-        articleService.deleteArticle(id);
-        return ResponseEntity.noContent().build();
-    }
+        @DeleteMapping("/articles/{id}")
+        public ResponseEntity<Void> deleteArticle(@PathVariable Long id) {
+            articleService.deleteArticle(id);
+            return ResponseEntity.noContent().build();
+        }
+
+    // <editor-fold defaultstate="collapsed" desc="ARTICLE SECTIONS">
+
+        @GetMapping("/articles/{articleId}/sections")
+        public ResponseEntity<List<ArticleSectionDto>> getSectionsByArticle(@PathVariable Long articleId) {
+            return ResponseEntity.ok(articleSectionService.findSectionsByArticleId(articleId));
+        }
+
+        @PostMapping(value = "/articles/{articleId}/sections", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+        public ResponseEntity<ArticleSectionDto> createSection(
+                @PathVariable Long articleId,
+                @RequestPart(name = "section") String sectionJson,
+                @RequestPart(required = false, name = "image") MultipartFile image
+        ) throws JsonProcessingException {
+            ArticleSectionDto dto = objectMapper.readValue(sectionJson, ArticleSectionDto.class);
+            return new ResponseEntity<>(articleSectionService.saveSection(articleId, dto, image), HttpStatus.CREATED);
+        }
+
+        @PatchMapping(value = "/articles/{articleId}/sections/{sectionId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+        public ResponseEntity<ArticleSectionDto> updateSection(
+                @PathVariable Long articleId,
+                @PathVariable Long sectionId,
+                @RequestPart(name = "section") String sectionJson,
+                @RequestPart(required = false, name = "image") MultipartFile image
+        ) throws JsonProcessingException {
+            ArticleSectionDto dto = objectMapper.readValue(sectionJson, ArticleSectionDto.class);
+            // On force l'id depuis le path pour éviter les incohérences
+            dto = new ArticleSectionDto(sectionId, dto.contenu(), dto.image(), dto.ordre());
+            return ResponseEntity.ok(articleSectionService.saveSection(articleId, dto, image));
+        }
+
+        @DeleteMapping("/articles/{articleId}/sections/{sectionId}")
+        public ResponseEntity<Void> deleteSection(@PathVariable Long articleId, @PathVariable Long sectionId) {
+            articleSectionService.deleteSection(sectionId);
+            return ResponseEntity.noContent().build();
+        }
+
+        @DeleteMapping("/articles/{articleId}/sections")
+        public ResponseEntity<Void> deleteAllSections(@PathVariable Long articleId) {
+            articleSectionService.deleteSectionsByArticleId(articleId);
+            return ResponseEntity.noContent().build();
+        }
+
     // </editor-fold>
+    // </editor-fold>
+
+
 
     // <editor-fold defaultstate="collapsed" desc="JOURNAUX PDF">
 
@@ -225,5 +280,12 @@ public class JournalController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
                 .header(HttpHeaders.CONTENT_TYPE, "application/pdf")
                 .body(pdfBytes);
+    }
+
+    // --- Utilitaire ---
+    private List<ArticleSectionDto> parseSections(String sectionsJson) throws JsonProcessingException {
+        if (sectionsJson == null || sectionsJson.isBlank()) return null;
+        return objectMapper.readValue(sectionsJson,
+                objectMapper.getTypeFactory().constructCollectionType(List.class, ArticleSectionDto.class));
     }
 }

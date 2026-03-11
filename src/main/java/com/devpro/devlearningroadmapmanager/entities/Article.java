@@ -7,6 +7,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "articles")
@@ -33,4 +35,8 @@ public class Article {
     @ManyToOne
     @JoinColumn(name = "rubrique_id")
     private Rubrique rubrique;
+
+    @OneToMany(mappedBy = "article", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("ordre ASC")
+    private List<ArticleSection> sections = new ArrayList<>();
 }

@@ -177,10 +177,7 @@ public class UserServiceImpl implements IUserService {
             }
 
         } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", "Échec de l'authentification");
-            response.put("error", e.getMessage());
-            return response;
+            throw new RuntimeException("username or password invalid");
         }
 
         return  response;

@@ -3,10 +3,13 @@ package com.devpro.devlearningroadmapmanager.service.impl;
 import com.devpro.devlearningroadmapmanager.cloud.service.CloudinaryService;
 import com.devpro.devlearningroadmapmanager.config.FileStorageProperty;
 import com.devpro.devlearningroadmapmanager.dtos.ArticleDto;
+import com.devpro.devlearningroadmapmanager.dtos.ArticleSectionDto;
 import com.devpro.devlearningroadmapmanager.entities.Article;
+import com.devpro.devlearningroadmapmanager.entities.ArticleSection;
 import com.devpro.devlearningroadmapmanager.entities.Rubrique;
 import com.devpro.devlearningroadmapmanager.mappers.ArticleMapper;
 import com.devpro.devlearningroadmapmanager.repositories.ArticleRepository;
+import com.devpro.devlearningroadmapmanager.repositories.ArticleSectionRepository;
 import com.devpro.devlearningroadmapmanager.repositories.RubriqueRepository;
 import com.devpro.devlearningroadmapmanager.service.IArticleService;
 import jakarta.persistence.EntityNotFoundException;
@@ -25,14 +28,11 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.MalformedURLException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -41,61 +41,44 @@ public class ArticleServiceImpl implements IArticleService {
 
     private final ArticleRepository articleRepository;
     private final RubriqueRepository rubriqueRepository;
+    private final ArticleSectionRepository sectionRepository;
     private final ArticleMapper articleMapper;
     private final FileStorageProperty fileStorageProperty;
     private final CloudinaryService cloudinaryService;
 
     @Override
-    public Page<ArticleDto> findArticles(Long id, Long rubriqueId, String search, String statut, Instant dateDebut, Instant dateFin, Pageable pageable) {
+    public Page<ArticleDto> findArticles(Long id, Long rubriqueId, String search, String statut,
+                                         Instant dateDebut, Instant dateFin, Pageable pageable) {
         Specification<Article> specification = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
-            if (id != null) {
-                predicates.add(cb.equal(root.get("id"), id));
-            }
-            if (rubriqueId != null) {
-                predicates.add(cb.equal(root.get("rubrique").get("id"), rubriqueId));
-            }
+            if (id != null) predicates.add(cb.equal(root.get("id"), id));
+            if (rubriqueId != null) predicates.add(cb.equal(root.get("rubrique").get("id"), rubriqueId));
             if (StringUtils.hasText(search)) {
                 String searchTerm = "%" + search.toLowerCase() + "%";
-                Predicate predicate = cb.or(
+                predicates.add(cb.or(
                         cb.like(cb.lower(root.get("titre")), searchTerm),
                         cb.like(cb.lower(root.get("slug")), searchTerm)
-                );
-                predicates.add(predicate);
+                ));
             }
-
-            // datePublication >= dateDebut
-            if (dateDebut != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("datePublication"), dateDebut));
-            }
-
-            // datePublication <= dateFin
-            if (dateFin != null) {
-                predicates.add(cb.lessThanOrEqualTo(root.get("datePublication"), dateFin));
-            }
-
-            if (StringUtils.hasText(statut)) {
-                predicates.add(cb.equal(root.get("statut"), statut));
-            }
-
-
+            if (dateDebut != null) predicates.add(cb.greaterThanOrEqualTo(root.get("datePublication"), dateDebut));
+            if (dateFin != null) predicates.add(cb.lessThanOrEqualTo(root.get("datePublication"), dateFin));
+            if (StringUtils.hasText(statut)) predicates.add(cb.equal(root.get("statut"), statut));
 
             return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
         };
 
-        return articleRepository.findAll(specification, pageable)
-                .map(articleMapper::toDto);
+        return articleRepository.findAll(specification, pageable).map(articleMapper::toDto);
     }
 
     @Override
     @Transactional
-    public ArticleDto saveArticle(Long id, ArticleDto.ArticleSaveDto dto, MultipartFile imageFile) {
+    public ArticleDto saveArticle(Long id, ArticleDto.ArticleSaveDto dto, MultipartFile imageFile,
+                                  List<ArticleSectionDto> sections, List<MultipartFile> sectionImages) {
         Article article;
 
         if (id == null) {
             article = articleMapper.toEntity(dto);
-
         } else {
             article = articleRepository.findById(id)
                     .orElseThrow(() -> new EntityNotFoundException("Article non trouvé"));
@@ -107,12 +90,44 @@ public class ArticleServiceImpl implements IArticleService {
         article.setRubrique(rubrique);
 
         if (imageFile != null && !imageFile.isEmpty()) {
-            String imageUrl = cloudinaryService.uploadImage(imageFile);
-            article.setImage(imageUrl);
+            if (article.getImage() != null) cloudinaryService.deleteImage(article.getImage());
+            article.setImage(cloudinaryService.uploadImage(imageFile));
         }
+
         article.setSlug(generateSlug(dto.titre()));
         article.setDatePublication(Instant.now());
         article = articleRepository.save(article);
+
+        // Sections : on supprime les anciennes puis on recrée
+        if (sections != null && !sections.isEmpty()) {
+            List<ArticleSection> existingSections = sectionRepository.findByArticleIdOrderByOrdreAsc(article.getId());
+            existingSections.forEach(s -> {
+                if (s.getImage() != null) cloudinaryService.deleteImage(s.getImage());
+            });
+            sectionRepository.deleteByArticleId(article.getId());
+
+            for (int i = 0; i < sections.size(); i++) {
+                ArticleSectionDto sectionDto = sections.get(i);
+                ArticleSection section = new ArticleSection();
+                section.setArticle(article);
+                section.setContenu(sectionDto.contenu());
+                section.setOrdre(sectionDto.ordre() != null ? sectionDto.ordre() : i);
+
+                // Image de la section si fournie
+                MultipartFile sectionImage = (sectionImages != null && i < sectionImages.size())
+                        ? sectionImages.get(i) : null;
+
+                if (sectionImage != null && !sectionImage.isEmpty()) {
+                    section.setImage(cloudinaryService.uploadImage(sectionImage));
+                } else {
+                    // Conserver l'URL existante si pas de nouveau fichier
+                    section.setImage(sectionDto.image());
+                }
+
+                sectionRepository.save(section);
+            }
+        }
+
         return articleMapper.toDto(article);
     }
 
@@ -122,9 +137,15 @@ public class ArticleServiceImpl implements IArticleService {
         Article article = articleRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Article non trouvé"));
 
-        if (article.getImage() != null) {
-            cloudinaryService.deleteImage(article.getImage());
-        }
+        // Supprimer les images des sections
+        List<ArticleSection> sections = sectionRepository.findByArticleIdOrderByOrdreAsc(id);
+        sections.forEach(s -> {
+            if (s.getImage() != null) cloudinaryService.deleteImage(s.getImage());
+        });
+        sectionRepository.deleteByArticleId(id);
+
+        // Supprimer l'image principale
+        if (article.getImage() != null) cloudinaryService.deleteImage(article.getImage());
 
         articleRepository.delete(article);
     }
@@ -140,22 +161,14 @@ public class ArticleServiceImpl implements IArticleService {
     public Resource downloadDocument(String fileName) throws IOException {
         try {
             Path root = Paths.get(fileStorageProperty.getUploadDir()).toAbsolutePath().normalize();
-
             Path filePath = root.resolve(fileName).normalize();
-
             Resource resource = new UrlResource(filePath.toUri());
-
-            if (resource.exists() || resource.isReadable()) {
-                return resource;
-            } else {
-                throw new FileNotFoundException("Le fichier " + fileName + " est introuvable sur le serveur.");
-            }
+            if (resource.exists() || resource.isReadable()) return resource;
+            throw new FileNotFoundException("Le fichier " + fileName + " est introuvable.");
         } catch (MalformedURLException e) {
             throw new FileNotFoundException("Erreur lors de la récupération du fichier : " + fileName);
         }
     }
-
-    // --- Utilitaires ---
 
     private String generateSlug(String title) {
         return title.toLowerCase()
