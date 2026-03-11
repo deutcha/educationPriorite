@@ -27,7 +27,7 @@ public class ArticleSectionServiceImpl implements IArticleSectionService {
     public List<ArticleSectionDto> findSectionsByArticleId(Long articleId) {
         return sectionRepository.findByArticleIdOrderByOrdreAsc(articleId)
                 .stream()
-                .map(s -> new ArticleSectionDto(s.getId(), s.getContenu(), s.getImage(), s.getOrdre()))
+                .map(s -> new ArticleSectionDto(s.getId(), s.getTitre() ,s.getContenu(), s.getImage(), s.getOrdre()))
                 .toList();
     }
 
@@ -47,6 +47,7 @@ public class ArticleSectionServiceImpl implements IArticleSectionService {
                     .orElseThrow(() -> new EntityNotFoundException("Section non trouvée"));
         }
 
+        section.setTitre(dto.titre());
         section.setContenu(dto.contenu());
         section.setOrdre(dto.ordre());
 
@@ -59,7 +60,7 @@ public class ArticleSectionServiceImpl implements IArticleSectionService {
         }
 
         ArticleSection saved = sectionRepository.save(section);
-        return new ArticleSectionDto(saved.getId(), saved.getContenu(), saved.getImage(), saved.getOrdre());
+        return new ArticleSectionDto(saved.getId(), saved.getTitre() ,saved.getContenu(), saved.getImage(), saved.getOrdre());
     }
 
     @Override

@@ -110,6 +110,7 @@ public class ArticleServiceImpl implements IArticleService {
                 ArticleSectionDto sectionDto = sections.get(i);
                 ArticleSection section = new ArticleSection();
                 section.setArticle(article);
+                section.setTitre(sectionDto.titre());
                 section.setContenu(sectionDto.contenu());
                 section.setOrdre(sectionDto.ordre() != null ? sectionDto.ordre() : i);
 

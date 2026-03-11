@@ -127,8 +127,7 @@ public class JournalController {
                 @RequestPart(required = false, name = "image") MultipartFile image
         ) throws JsonProcessingException {
             ArticleSectionDto dto = objectMapper.readValue(sectionJson, ArticleSectionDto.class);
-            // On force l'id depuis le path pour éviter les incohérences
-            dto = new ArticleSectionDto(sectionId, dto.contenu(), dto.image(), dto.ordre());
+            dto = new ArticleSectionDto(sectionId, dto.titre() ,dto.contenu(), dto.image(), dto.ordre());
             return ResponseEntity.ok(articleSectionService.saveSection(articleId, dto, image));
         }
 

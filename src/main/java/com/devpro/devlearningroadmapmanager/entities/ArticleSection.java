@@ -19,6 +19,8 @@ public class ArticleSection {
     @JoinColumn(name = "article_id")
     private Article article;
 
+    private String titre;
+
     @Column(columnDefinition = "TEXT")
     private String contenu;
 
