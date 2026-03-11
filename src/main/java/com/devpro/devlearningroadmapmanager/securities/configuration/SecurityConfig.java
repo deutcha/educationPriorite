@@ -71,7 +71,8 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(Arrays.asList(
                 "http://localhost:4200",
-                "educationpriorite.up.railway.app"
+                "https://educationpriorite.up.railway.app",
+                "https://educationpriorite-production.up.railway.app"
         ));
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
