@@ -281,7 +281,6 @@ public class JournalController {
                 .body(pdfBytes);
     }
 
-    // --- Utilitaire ---
     private List<ArticleSectionDto> parseSections(String sectionsJson) throws JsonProcessingException {
         if (sectionsJson == null || sectionsJson.isBlank()) return null;
         return objectMapper.readValue(sectionsJson,

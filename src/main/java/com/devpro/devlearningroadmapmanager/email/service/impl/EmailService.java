@@ -55,7 +55,6 @@ public class EmailService implements IEmailService {
             mailSender.send(mail);
 
         } catch (Exception e) {
-            // Remonte l'erreur proprement si Gmail est injoignable ou si les credentials sont invalides
             throw new RuntimeException("Erreur envoi email : " + e.getMessage(), e);
         }
     }
